@@ -20,21 +20,11 @@ import { SummaryCard } from "@/components/SummaryCard";
 import { TopicsCard } from "@/components/TopicsCard";
 import { Button } from "@/components/ui/button";
 
-const summaryText = `coming soon...`;
-
-const topics = [
-  "Medicine",
-  "Health",
-  "Therapy",
-  "Anatomy",
-  "Psychiatry",
-  "Surgery",
-];
+import { experimental_useObject as useObject } from "@ai-sdk/react";
+import { SummarySchema } from "@/schemas/summary";
 
 export default function App() {
-  const [caption, setCaption] = useState<string>(
-    "Open your microphone and start speaking to get started"
-  );
+  const [caption, setCaption] = useState<string>("");
   const { connection, connectToDeepgram, connectionState } = useDeepgram();
   const {
     setupMicrophone,
@@ -45,6 +35,14 @@ export default function App() {
   } = useMicrophone();
   const captionTimeout = useRef<any>(null);
   const keepAliveInterval = useRef<any>(null);
+  const { object, submit, isLoading, stop, error } = useObject({
+    api: "/api/groq-ai",
+    schema: SummarySchema,
+    initialValue: {
+      summary: "",
+      topics: [],
+    },
+  });
 
   const isMicOn = microphoneState === MicrophoneState.Open;
 
@@ -55,6 +53,8 @@ export default function App() {
     }
     if (isMicOn) {
       stopMicrophone();
+      if (caption === "") return;
+      submit({ prompt: caption });
     } else {
       startMicrophone();
     }
@@ -90,18 +90,13 @@ export default function App() {
       const { is_final: isFinal, speech_final: speechFinal } = data;
       const thisCaption = data.channel.alternatives[0].transcript;
 
-      console.log(thisCaption);
-
       if (thisCaption !== "") {
-        // console.log('thisCaption !== ""', thisCaption);
         setCaption((prev) =>
           prev === thisCaption ? prev : prev + " " + thisCaption
         );
       }
 
       if (isFinal && speechFinal) {
-        console.log({ isFinal });
-        console.log({ speechFinal });
         clearTimeout(captionTimeout.current);
         captionTimeout.current = setTimeout(() => {
           // setCaption(undefined);
@@ -122,6 +117,7 @@ export default function App() {
       connection.removeListener(LiveTranscriptionEvents.Transcript, onTranscript);
       microphone.removeEventListener(MicrophoneEvents.DataAvailable, onData);
       clearTimeout(captionTimeout.current);
+      stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState]);
@@ -169,6 +165,7 @@ export default function App() {
               {isMicOn ? "Stop recording" : "Start recording"}
             </span>
           </Button>
+
           {microphone && (
             <Visualizer microphone={microphone} isRecording={isMicOn} />
           )}
@@ -177,8 +174,12 @@ export default function App() {
       <main className="grid flex-1 gap-4 md:grid-cols-2">
         <TranscriptCard transcript={caption} />
         <div className="flex flex-col gap-4">
-          <SummaryCard summary={summaryText} />
-          <TopicsCard topics={topics} />
+          {JSON.stringify(error)}
+          <SummaryCard summary={object?.summary} isLoading={isLoading} />
+          <TopicsCard
+            topics={object?.topics as string[]}
+            isLoading={isLoading}
+          />
         </div>
       </main>
     </div>
